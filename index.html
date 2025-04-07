@@ -1,0 +1,47 @@
+from flask import Flask, render_template, request, redirect, url_for, session, flash from flask_sqlalchemy import SQLAlchemy from werkzeug.security import generate_password_hash, check_password_hash import os, random, smtplib
+
+app = Flask(name) app.secret_key = 'chave_super_secreta' app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///usuarios.db' db = SQLAlchemy(app)
+
+class Usuario(db.Model): id = db.Column(db.Integer, primary_key=True) nome = db.Column(db.String(100)) email = db.Column(db.String(100), unique=True) senha = db.Column(db.String(200)) codigo_2fa = db.Column(db.String(10))
+
+@app.before_first_request def criar_tabelas(): db.create_all()
+
+@app.route('/') def index(): return render_template('index.html')
+
+@app.route('/registro', methods=['GET', 'POST']) def registro(): if request.method == 'POST': nome = request.form['nome'] email = request.form['email'] senha = request.form['senha'] confirmacao = request.form['confirmar_senha']
+
+if senha != confirmacao:
+        flash('As senhas não coincidem.')
+        return redirect(url_for('registro'))
+
+    hash_senha = generate_password_hash(senha)
+    novo_usuario = Usuario(nome=nome, email=email, senha=hash_senha)
+    db.session.add(novo_usuario)
+    db.session.commit()
+    flash('Registro realizado com sucesso!')
+    return redirect(url_for('login'))
+
+return render_template('registro.html')
+
+@app.route('/login', methods=['GET', 'POST']) def login(): if request.method == 'POST': email = request.form['email'] senha = request.form['senha'] usuario = Usuario.query.filter_by(email=email).first()
+
+if usuario and check_password_hash(usuario.senha, senha):
+        # Gerar código 2FA e simular envio
+        codigo = str(random.randint(100000, 999999))
+        usuario.codigo_2fa = codigo
+        db.session.commit()
+        session['usuario_id'] = usuario.id
+        flash(f'Código 2FA enviado (simulado): {codigo}')
+        return redirect(url_for('verificar_2fa'))
+    else:
+        flash('Credenciais inválidas.')
+return render_template('login.html')
+
+@app.route('/verificar-2fa', methods=['GET', 'POST']) def verificar_2fa(): if request.method == 'POST': codigo = request.form['codigo'] usuario = Usuario.query.get(session.get('usuario_id')) if usuario and usuario.codigo_2fa == codigo: session['logado'] = True flash('Login bem-sucedido!') return redirect(url_for('painel')) else: flash('Código inválido.') return render_template('verificar_2fa.html')
+
+@app.route('/recuperar-senha', methods=['GET', 'POST']) def recuperar_senha(): if request.method == 'POST': email = request.form['email'] usuario = Usuario.query.filter_by(email=email).first() if usuario: token = str(random.randint(100000, 999999)) flash(f'Token de recuperação (simulado): {token}') else: flash('E-mail não encontrado.') return render_template('recuperar_senha.html')
+
+@app.route('/painel') def painel(): if not session.get('logado'): return redirect(url_for('login')) return 'Bem-vindo ao painel seguro!'
+
+if name == 'main': app.run(debug=True)
+
